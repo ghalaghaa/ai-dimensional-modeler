@@ -1,0 +1,226 @@
+.wrap { display: flex; flex-direction: column; gap: 18px; }
+
+.draftBanner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: rgba(255,217,61,0.08);
+  border: 1px solid rgba(255,217,61,0.3);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 0.82rem;
+  color: var(--warning);
+  line-height: 1.5;
+}
+
+.draftIcon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+.grainBox {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--navy-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 0.85rem;
+}
+
+.label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.section { display: flex; flex-direction: column; gap: 10px; }
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sectionTitle { font-size: 0.95rem; font-weight: 700; color: var(--gold); }
+
+.card {
+  background: var(--navy-mid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: rgba(201,168,76,0.4); }
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tableName {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--white);
+  font-family: 'Fira Code', monospace;
+  direction: ltr;
+}
+
+.grain { font-size: 0.8rem; color: var(--text-muted); }
+
+.tableWrap { overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.table th {
+  text-align: left;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(30,58,95,0.5);
+  color: var(--text);
+  vertical-align: top;
+}
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: var(--gold-faint); }
+
+.mono { font-family: 'Fira Code', monospace; font-size: 0.75rem; direction: ltr; text-align: left; color: #a8d8ff; }
+
+.fkRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.keyRow {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.keyItem { display: flex; flex-direction: column; gap: 3px; }
+
+.code {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.78rem;
+  background: #07111f;
+  color: #a8d8ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  direction: ltr;
+}
+
+.attrWrap { display: flex; flex-direction: column; gap: 6px; }
+.attrList { display: flex; flex-wrap: wrap; gap: 6px; }
+.attr {
+  font-size: 0.75rem;
+  background: rgba(30,58,95,0.6);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--text);
+  font-family: 'Fira Code', monospace;
+  direction: ltr;
+}
+
+.sourceList { display: flex; flex-wrap: wrap; gap: 8px; }
+.sourceTag {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  background: #07111f;
+  color: #60a5fa;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(96,165,250,0.2);
+  direction: ltr;
+}
+
+.notes {
+  background: rgba(17,34,64,0.7);
+  border: 1px solid var(--border);
+  border-right: 3px solid var(--gold);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.83rem;
+}
+
+/* ── شريط الجودة ─────────────────────────────────────── */
+.qualityBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--navy-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 0.85rem;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 8px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+
+/* ── عنوان الجدول الداخلي ───────────────────────────── */
+.tableLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  margin-top: 2px;
+}
+
+/* ── شبكة التحقق من المخطط النجمي ──────────────────── */
+.validationGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.validItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 1px solid;
+  font-weight: 600;
+}
+
+.validPass {
+  background: rgba(45,212,191,0.08);
+  border-color: rgba(45,212,191,0.3);
+  color: var(--teal);
+}
+
+.validFail {
+  background: rgba(248,113,113,0.08);
+  border-color: rgba(248,113,113,0.3);
+  color: #f87171;
+}
