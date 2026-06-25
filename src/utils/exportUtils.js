@@ -10,10 +10,12 @@ export function exportExcel(results) {
   const wb = XLSX.utils.book_new();
 
   /* ── ورقة 1: الملخّص ─────────────────────────────────────────── */
-  const summaryRows = [[
-    'اسم التقرير', 'الحبّة', 'الجودة %',
-    'جداول الحقائق', 'جداول الأبعاد', 'الجداول المصدر', 'ملاحظات',
-  ]];
+ /* ── Sheet 1: Summary ─────────────────────────────────────────── */
+const summaryRows = [[
+  'Report Name', 'Grain', 'Quality %',
+  'Fact Tables', 'Dimension Tables', 'Source Tables', 'Notes',
+]];
+
   results.forEach((r) => {
     const v = r.result;
     summaryRows.push([
@@ -31,14 +33,21 @@ export function exportExcel(results) {
     { wch: 30 }, { wch: 42 }, { wch: 12 },
     { wch: 35 }, { wch: 45 }, { wch: 60 }, { wch: 50 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'الملخّص');
-
+XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
   /* ── ورقة 2: جداول الحقائق ──────────────────────────────────── */
-  const factRows = [[
-    'التقرير', 'جدول الحقائق', 'الحبّة', 'نوع الحقيقة',
-    'اسم المقياس', 'نوع المقياس', 'التجميع / الصيغة',
-    'العمود المصدر', 'قاعدة التحويل', 'فحص الجودة', 'المفاتيح الأجنبية',
-  ]];
+ const factRows = [[
+  'Report',
+  'Fact Table',
+  'Grain',
+  'Fact Type',
+  'Measure Name',
+  'Measure Type',
+  'Aggregation / Formula',
+  'Source Column',
+  'Transformation Rule',
+  'Data Quality Check',
+  'Foreign Keys'
+]];
   results.forEach((r) => {
     (r.result.facts ?? []).forEach((f) => {
       const reportName = r.result.report_name ?? r.fileName;
@@ -76,14 +85,19 @@ export function exportExcel(results) {
     { wch: 26 }, { wch: 12 }, { wch: 32 },
     { wch: 28 }, { wch: 44 }, { wch: 36 }, { wch: 40 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsFacts, 'جداول الحقائق');
-
+XLSX.utils.book_append_sheet(wb, wsFacts, 'Fact Tables');
   /* ── ورقة 3: جداول الأبعاد ──────────────────────────────────── */
-  const dimRows = [[
-    'التقرير', 'جدول البُعد', 'الحبّة',
-    'المفتاح الطبيعي', 'المفتاح البديل', 'نوع SCD',
-    'السمات', 'جدول المصدر', 'مقترح',
-  ]];
+const dimRows = [[
+  'Report',
+  'Dimension Table',
+  'Grain',
+  'Business Key',
+  'Surrogate Key',
+  'SCD Type',
+  'Attributes',
+  'Source Table',
+  'Inferred'
+]];
   results.forEach((r) => {
     (r.result.dimensions ?? []).forEach((d) => {
       dimRows.push([
@@ -103,14 +117,19 @@ export function exportExcel(results) {
     { wch: 22 }, { wch: 22 }, { wch: 10 },
     { wch: 50 }, { wch: 42 }, { wch: 10 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsDims, 'جداول الأبعاد');
-
+XLSX.utils.book_append_sheet(wb, wsDims, 'Dimension Tables');
   /* ── ورقة 4: ورقة المطابقة (ETL) ────────────────────────────── */
-  const mappingRows = [[
-    'الجدول الهدف', 'العمود الهدف', 'الجدول المصدر (RAW)',
-    'العمود المصدر', 'قاعدة التحويل',
-    'نوع المفتاح', 'نوع SCD', 'فحص جودة البيانات', 'ترتيب التحميل',
-  ]];
+const mappingRows = [[
+  'Target Table',
+  'Target Column',
+  'Source Table (RAW)',
+  'Source Column',
+  'Transformation Rule',
+  'Key Type',
+  'SCD Type',
+  'Data Quality Check',
+  'Load Order'
+]];
 
   results.forEach((r) => {
 
@@ -222,8 +241,7 @@ export function exportExcel(results) {
     { wch: 26 }, { wch: 50 },
     { wch: 16 }, { wch: 10 }, { wch: 40 }, { wch: 14 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsMapping, 'ورقة المطابقة (ETL)');
-
+XLSX.utils.book_append_sheet(wb, wsMapping, ' Mapping');
   /* ── كتابة الملف ─────────────────────────────────────────────── */
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), 'dimensional_model.xlsx');
