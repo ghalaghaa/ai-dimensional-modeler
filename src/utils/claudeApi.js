@@ -37,6 +37,11 @@ A FACT table exists when SQL contains:
 Rules:
   - COUNT(DISTINCT x)      → base_measure
   - SUM(CASE WHEN ...)     → derived_measure
+  - A measure built by ARITHMETIC on other measures/aggregates
+    (subtraction, division, ratio, +, -, *, /) → derived_measure,
+    NEVER base_measure. Example:
+    "COUNT(DISTINCT a) - COUNT(DISTINCT b)" is DERIVED — put the
+    expression in "formula" and reference the base measures.
   - Preserve ALL measures — never lose any.
 
 Fact types:
@@ -107,7 +112,18 @@ STEP 5 — DATE DETECTION
 Always create DIM_DATE when SQL contains:
   DATE, MONTH, YEAR, CURRENT_TIMESTAMP, DATEADD, DATEDIFF,
   SNAPSHOT, MTD, YTD, Date_Opened, Date_Closed.
-DIM_DATE is mandatory when any date logic is present.
+DIM_DATE is mandatory when any date logic is present — INCLUDING
+when the date appears ONLY in a WHERE/filter clause and not in
+SELECT or GROUP BY. Never skip DIM_DATE just because the date is
+not one of the GROUP BY columns.
+
+PERIODIC SNAPSHOT RULE: a Periodic Snapshot fact always represents
+data as of a reporting/snapshot date, so it MUST include DIM_DATE
+(the snapshot/reporting date) as a foreign key — even if the only
+date in the SQL is a filter such as
+"... <= DATEADD(DAY, -1, CURRENT_TIMESTAMP)". In that case add
+DIM_DATE with "inferred": true and list it in the fact's
+foreign_keys.
 
 ═══════════════════════════════════════════════════════════
 STEP 6 — SCD RULES
