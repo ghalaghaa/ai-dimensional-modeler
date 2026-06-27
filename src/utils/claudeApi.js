@@ -1,5 +1,5 @@
-const API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-const MODEL   = import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile';
+// The API key lives on the server (serverless function /api/groq), never in the browser.
+const MODEL = import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 /* ─────────────────────────────────────────────────────────
    SYSTEM PROMPT  —  Senior Enterprise Data Architect
@@ -86,7 +86,15 @@ or segments a row is a DIMENSION — create one for EACH:
   · any other CASE label set  -> its own DIM_*
 Put the FULL CASE logic in column_mappings.transformation, and
 trace the column to its REAL base table (e.g. Customer_Type and
-Customer_Parent_Country come from D_Customer).
+Customer_Parent_Country come from D_Customer). Even if a CTE already
+labelled the value and the final query only reuses the alias, you MUST
+still write the original CASE expression — NEVER "Direct copy" for a
+CASE-derived column.
+
+NON-CASE GROUP BY COLUMNS (e.g. Sort, ordering or ranking keys) must
+NOT be dropped: attach each as an attribute of the dimension it
+describes (e.g. Sort -> attribute of the account-category dimension)
+or as a degenerate dimension on the fact.
 
 EVERY source table in FROM/JOIN MUST be USED by at least one
 dimension or fact. If a joined table (e.g. D_Customer) only
@@ -143,13 +151,29 @@ Each entry must contain:
   - target_column  : column name in the dimensional model
   - source_column  : exact column name as it appears in the SQL
                      (if uncertain: "needs confirmation")
-  - transformation : REAL SQL transformation derived from the query:
+  - transformation : the REAL SQL logic that PRODUCES this column,
+                     traced back through ALL CTEs to its true origin:
+                     · CASE/IIF ORIGIN (CRITICAL): if the value comes
+                       from a CASE/IIF anywhere in the query — EVEN IF
+                       a CTE already computed it and the final SELECT /
+                       GROUP BY only passes the alias through — copy the
+                       FULL original CASE/IIF expression here, e.g.
+                       "CASE WHEN Customer_Type IN ('AP','AG','AS','AT',
+                       'EA','EJ','ED','PB','EC') THEN 'RBG' ELSE
+                       'NON RBG' END". Follow the alias up the CTE chain
+                       until you find the CASE; never stop at the alias.
                      · TRIM/UPPER for text fields
                      · CAST/CONVERT for dates and numbers
                      · COALESCE for NULL handling
-                     · Copy CASE/IIF/DATEDIFF/DATEADD from SQL as-is
-                     If truly direct: "Direct copy from [source_column]"
-                     NEVER write just "Direct mapping"
+                     · Copy DATEDIFF/DATEADD from SQL as-is
+                     Use "Direct copy from [base_column]" ONLY for a
+                     plain pass-through of a real base-table column that
+                     has NO CASE/IIF/function logic ANYWHERE in the CTE
+                     chain.
+                     NEVER write "Direct copy"/"Direct mapping" for a
+                     column whose value originates from a CASE/IIF —
+                     that is a hard error. NEVER write just
+                     "Direct mapping".
   - data_quality   : specific actionable check (null policy, range,
                      uniqueness, referential integrity, format)
 
@@ -170,6 +194,8 @@ Before output verify:
   7. EVERY source table used by at least one dimension/fact?
   8. No CTE / alias used as a source_table?
   9. All foreign keys created (one per dimension)?
+ 10. No "Direct copy" on any CASE/IIF-derived column — the FULL
+     CASE expression is shown in its transformation?
 If ANY answer is NO → re-analyze and FIX before returning JSON.
 
 Return VALID JSON ONLY. No markdown. No comments.
@@ -276,15 +302,10 @@ function calculateQuality(model) {
    MAIN EXPORT
 ───────────────────────────────────────────────────────── */
 export async function analyzeQuery(sqlContent, fileName) {
-  if (!API_KEY || API_KEY === 'your_api_key_here') {
-    throw new Error('API key is not set. Add VITE_GROQ_API_KEY to your .env file');
-  }
-
-  const response = await fetch('/api/groq/openai/v1/chat/completions', {
+  const response = await fetch('/api/groq', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify({
       model: MODEL,
