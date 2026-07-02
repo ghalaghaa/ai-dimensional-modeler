@@ -1,6 +1,9 @@
 import express from 'express'
 import cors from 'cors'
 import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Server } from 'socket.io'
 import { config } from './config.js'
 import './db.js'
@@ -32,6 +35,16 @@ app.use('/api/attachments', attachmentsRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/campaigns', campaignsRoutes)
+
+// Single-service deployment: the frontend's production build (Vite outputs to
+// ../dist relative to the repo root) is served by this same process, so the
+// whole app lives behind one URL with no separate static host needed.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const clientDist = path.join(__dirname, '..', '..', 'dist')
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist))
+  app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+}
 
 app.use((err, req, res, _next) => {
   console.error(err)

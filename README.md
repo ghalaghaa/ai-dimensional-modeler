@@ -87,6 +87,33 @@ Open http://localhost:5173.
    retry just the failed recipients at any point.
 5. **History** lists every campaign with its stats and a CSV export of per-recipient outcomes.
 
+## Deploying to a public URL (Render)
+
+In production, the Express server also serves the built frontend, so the whole app lives behind
+a single URL — no separate static host or CORS setup needed.
+
+1. Push this repo to your own GitHub account (or use this one) and connect it in the
+   [Render dashboard](https://dashboard.render.com/) — it will detect `render.yaml` and provision
+   one Web Service.
+2. Before the first deploy finishes, note the public URL Render assigns
+   (e.g. `https://applyflow.onrender.com`).
+3. In Render's environment variables for the service, set:
+   - `CLIENT_URL` and `SERVER_URL` → your Render URL
+   - `TOKEN_ENCRYPTION_KEY` → output of
+     `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` (see the Gmail OAuth
+     steps above, but use `https://<your-render-url>/api/auth/google/callback` as the redirect
+     URI, both in Google Cloud Console and here)
+   - the equivalent `MICROSOFT_*` variables if you also want Outlook
+   - `GROQ_API_KEY` if you want AI personalization
+4. Trigger a deploy (or redeploy after adding the env vars). Once it's live, open the URL, go to
+   **Settings**, and connect your Gmail/Outlook account for real.
+
+**Caveat:** Render's free plan does not include a persistent disk, so the SQLite database (and
+uploaded attachments) reset whenever the service restarts or redeploys — fine for testing, but for
+durable production use, add a paid persistent disk mounted at `server/data` and `server/uploads`,
+or swap SQLite for a managed database.
+
 ## Duplicate-sending safeguards
 
 - Recipient emails are deduplicated within your working list (manual add, paste, and import all

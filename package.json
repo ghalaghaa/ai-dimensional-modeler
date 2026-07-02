@@ -8,6 +8,7 @@
     "dev:web": "vite",
     "dev:server": "npm run dev --prefix server",
     "build": "vite build",
+    "start": "npm run start --prefix server",
     "lint": "oxlint",
     "preview": "vite preview",
     "install:all": "npm install && npm install --prefix server",
