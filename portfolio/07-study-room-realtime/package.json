@@ -1,0 +1,20 @@
+{
+  "name": "study-room-realtime",
+  "version": "1.0.0",
+  "description": "Real-time collaborative study room with shared notes, presence, and live chat",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest --runInBand"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "socket.io-client": "^4.7.5",
+    "supertest": "^7.0.0"
+  }
+}
