@@ -29,6 +29,7 @@ PROJECTS=(
   "08-volunteer-match:volunteer-match"
   "09-accessible-reader:accessible-reader"
   "10-voice-accessibility-assistant:voice-accessibility-assistant"
+  "site:portfolio-site"
 )
 
 if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then

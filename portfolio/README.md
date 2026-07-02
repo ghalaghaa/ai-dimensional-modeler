@@ -1,9 +1,14 @@
-# Portfolio — 10 Projects
+# Portfolio — 10 Projects + Personal Site
 
 Ten self-contained, tested, runnable projects, each in its own folder,
 each using a different language/stack and built for a real category of
 user. Every project has its own `README.md` with setup, run, and test
 instructions — start there.
+
+[**`site/`**](./site) is a personal portfolio website (about, skills,
+experience, and a filterable grid linking to all 10 project repos) —
+plain HTML/CSS/JS, deployable to GitHub Pages in minutes. See
+`site/README.md`.
 
 | # | Project | Who it's for | Stack | Tests |
 |---|---------|---------------|-------|-------|
@@ -66,6 +71,9 @@ gh auth login   # if not already logged in
 bash portfolio/scripts/split_and_push.sh
 ```
 
-It creates 10 public repos under your GitHub account (one per project,
-names are listed at the top of the script — edit them there if you want
-different names) and pushes each with its preserved commit history.
+It creates 11 public repos under your GitHub account (10 projects + the
+personal site, names are listed at the top of the script — edit them
+there if you want different names) and pushes each with its preserved
+commit history. After it runs, enable GitHub Pages on the
+`portfolio-site` repo (Settings → Pages → source: `main`, root) to get
+your live site URL.

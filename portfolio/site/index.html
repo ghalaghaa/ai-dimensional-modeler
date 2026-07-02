@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ghala Alnemari — AI Engineer &amp; Software Developer</title>
+  <meta name="description" content="Portfolio of Ghala Alnemari — AI Engineer and Software Developer. 10 projects spanning RAG, neural networks from scratch, LLM agents, and full-stack applications." />
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a class="nav__brand" href="#top">Ghala Alnemari</a>
+      <button class="nav__toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="nav__links" id="navLinks">
+        <a href="#about">About</a>
+        <a href="#skills">Skills</a>
+        <a href="#projects">Projects</a>
+        <a href="#experience">Experience</a>
+        <a href="#contact">Contact</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <span aria-hidden="true">🌙</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero">
+      <div class="container hero__inner">
+        <p class="hero__eyebrow">AI Engineer &middot; Software Developer</p>
+        <h1 id="heroName" class="hero__name">Ghala Alnemari</h1>
+        <p id="heroSummary" class="hero__summary"></p>
+        <div class="hero__actions">
+          <a href="#projects" class="btn btn--primary">View Projects</a>
+          <a href="#contact" class="btn btn--ghost">Get in Touch</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats" aria-label="Portfolio highlights">
+      <div class="container stats__grid" id="statsGrid"></div>
+    </section>
+
+    <section id="about" class="section">
+      <div class="container">
+        <h2 class="section__title">About</h2>
+        <p id="aboutText" class="about__text"></p>
+      </div>
+    </section>
+
+    <section id="skills" class="section section--alt">
+      <div class="container">
+        <h2 class="section__title">Skills</h2>
+        <div class="skills__grid" id="skillsGrid"></div>
+      </div>
+    </section>
+
+    <section id="projects" class="section">
+      <div class="container">
+        <h2 class="section__title">Projects</h2>
+        <p class="section__subtitle">
+          Ten self-contained, tested, runnable projects — different languages, different techniques, real users in mind.
+        </p>
+        <div class="filters" id="filters" role="group" aria-label="Filter projects by category">
+          <button class="filter-btn is-active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="ai">AI / ML</button>
+          <button class="filter-btn" data-filter="software">Software</button>
+        </div>
+        <div class="projects__grid" id="projectsGrid"></div>
+      </div>
+    </section>
+
+    <section id="experience" class="section section--alt">
+      <div class="container">
+        <h2 class="section__title">Experience</h2>
+        <ol class="timeline" id="timeline"></ol>
+      </div>
+    </section>
+
+    <section id="education" class="section">
+      <div class="container education__grid">
+        <div>
+          <h2 class="section__title">Education</h2>
+          <div id="educationCard" class="education__card"></div>
+        </div>
+        <div>
+          <h2 class="section__title">Certifications</h2>
+          <ul class="cert-list" id="certList"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact" class="section section--alt contact">
+      <div class="container contact__inner">
+        <h2 class="section__title">Get in touch</h2>
+        <p class="contact__text">Open to AI Engineering and software development opportunities — reach out anytime.</p>
+        <div class="contact__links" id="contactLinks"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; <span id="year"></span> Ghala Alnemari. Built with plain HTML, CSS &amp; JavaScript.</p>
+    </div>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
