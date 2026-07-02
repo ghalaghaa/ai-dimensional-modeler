@@ -1,0 +1,11 @@
+{
+  "name": "accessible-reader",
+  "version": "1.0.0",
+  "description": "A zero-dependency, offline-capable text-to-speech reading tool built with the browser's Web Speech API, designed for visually impaired and low-vision users.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

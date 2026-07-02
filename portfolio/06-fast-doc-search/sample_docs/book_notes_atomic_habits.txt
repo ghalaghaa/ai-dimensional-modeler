@@ -1,0 +1,35 @@
+Book Notes: Atomic Habits by James Clear
+
+Core idea: small, consistent habits compound into remarkable results over
+time. A 1% improvement each day, sustained for a year, leads to dramatic
+change because the gains build on each other.
+
+Key concepts:
+1. The Four Laws of Behavior Change
+   - Make it obvious (cue)
+   - Make it attractive (craving)
+   - Make it easy (response)
+   - Make it satisfying (reward)
+
+2. Identity-based habits: focus on who you want to become rather than
+   what you want to achieve. Every action is a vote for the type of
+   person you wish to be. Instead of "I want to read more," think
+   "I am someone who reads every day."
+
+3. Habit stacking: attach a new habit to an existing one using the
+   formula "After [current habit], I will [new habit]." This makes new
+   routines easier to remember and start.
+
+4. Environment design matters more than willpower. Make good habits
+   obvious and easy by shaping your surroundings, and make bad habits
+   invisible and hard by adding friction.
+
+5. The two-minute rule: when starting a new habit, it should take less
+   than two minutes to do. "Read before bed" becomes "read one page."
+
+Favorite quote: "You do not rise to the level of your goals. You fall to
+the level of your systems."
+
+Personal takeaway: I want to apply habit stacking to build a daily
+reading habit and use environment design to reduce phone usage before
+bed.

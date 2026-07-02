@@ -1,0 +1,21 @@
+Meeting Notes: Weekly Engineering Standup Recap
+Date: 2026-06-25
+Attendees: Full engineering team
+
+Highlights:
+- The search indexing pipeline migration is complete. Query latency for
+  the internal document search tool dropped from 800ms to under 50ms
+  after switching to the new inverted index storage format.
+- QA found a regression in the notifications service where duplicate
+  emails were sent for the same event. A fix is staged and will deploy
+  after code review.
+- Design shared updated mockups for the mobile dashboard. Feedback is
+  due by Wednesday so implementation can start next sprint.
+
+Blockers:
+- The staging database is running low on disk space, blocking some
+  integration tests. Infra is investigating and expects a fix today.
+
+Reminders:
+- Sprint demo is Thursday at 3pm.
+- Please update your task status in the tracker before end of day Friday.

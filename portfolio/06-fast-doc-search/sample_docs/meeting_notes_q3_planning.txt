@@ -1,0 +1,30 @@
+Meeting Notes: Q3 Planning Sync
+Date: 2026-06-18
+Attendees: Priya, Marcus, Devon, Lin
+
+Agenda:
+1. Review Q2 roadmap outcomes
+2. Discuss Q3 priorities
+3. Staffing and budget check-in
+
+Notes:
+- Priya reported that the onboarding redesign shipped two weeks late but
+  early metrics show a 15% drop in support tickets related to sign-up.
+- Marcus raised concerns about technical debt in the billing service.
+  The team agreed to allocate one engineer for the first three weeks of
+  Q3 to pay down the highest-risk items before new feature work starts.
+- Devon presented three candidate projects for Q3: a search improvement
+  initiative, a mobile notifications overhaul, and a partner API. After
+  discussion, the group prioritized the search improvement project
+  because it directly supports the upcoming enterprise customer renewal.
+- Lin flagged that the current budget has room for one additional
+  contractor if the search project needs extra design support.
+
+Action items:
+- Marcus to draft the technical debt plan by next Friday.
+- Priya to schedule a kickoff meeting for the search improvement project.
+- Devon to write a one-pager comparing the mobile and partner API options
+  for a future quarter.
+- Lin to confirm contractor budget with finance by end of month.
+
+Next meeting: 2026-07-02, same time.
