@@ -1,0 +1,20 @@
+Cell Biology Basics
+
+The mitochondria is the powerhouse of the cell, producing ATP through
+cellular respiration. It has its own DNA, separate from the nucleus,
+which supports the theory that mitochondria were once independent
+organisms absorbed by early eukaryotic cells.
+
+Photosynthesis
+
+Photosynthesis converts light energy into chemical energy stored in
+glucose. It takes place in the chloroplasts of plant cells and involves
+two main stages: the light-dependent reactions and the Calvin cycle.
+Oxygen is released as a byproduct of the light-dependent reactions.
+
+Cell Division
+
+Mitosis is the process by which a single cell divides into two
+genetically identical daughter cells. It consists of prophase, metaphase,
+anaphase, and telophase. Meiosis, in contrast, produces four genetically
+distinct gametes and is essential for sexual reproduction.

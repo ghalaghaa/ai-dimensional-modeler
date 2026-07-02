@@ -1,0 +1,6 @@
+pytest==8.3.4
+
+# Optional, only needed for live modes (not required to run tests):
+# vosk           # offline speech-to-text for --mic
+# pyaudio        # microphone access for --mic
+# pyautogui      # real mouse/keyboard control for --live
