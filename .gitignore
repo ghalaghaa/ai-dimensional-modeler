@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Backend runtime data
+server/data/
+server/uploads/
