@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Field'
 import { EmptyState } from '../components/ui/EmptyState'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { TableSkeleton } from '../components/ui/Skeleton'
 import { RecipientTable } from '../components/RecipientTable'
 import { RecipientFormModal } from '../components/RecipientFormModal'
 import { BulkPasteModal } from '../components/BulkPasteModal'
@@ -112,7 +113,7 @@ export function RecipientsPage() {
           </div>
 
           {loading ? (
-            <div className="p-10 text-center text-sm text-slate-400">Loading…</div>
+            <TableSkeleton rows={6} />
           ) : filtered.length === 0 ? (
             <EmptyState
               icon={Users}

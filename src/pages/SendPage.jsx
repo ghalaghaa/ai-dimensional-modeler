@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { Mail, Send, CheckCircle2, XCircle, Clock, Pause, Play, Ban, RotateCcw, Download, Info } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Mail, Send, CheckCircle2, XCircle, Clock, Pause, Play, Ban, RotateCcw, Download, Info, PartyPopper } from 'lucide-react'
 import { Topbar } from '../components/layout/Topbar'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -10,6 +11,7 @@ import { ProgressBar } from '../components/ui/ProgressBar'
 import { Badge } from '../components/ui/Badge'
 import { LogsTable } from '../components/LogsTable'
 import { EmptyState } from '../components/ui/EmptyState'
+import { CardSkeleton } from '../components/ui/Skeleton'
 import { useRecipients } from '../context/RecipientsContext'
 import { useDraft } from '../context/DraftContext'
 import { useSocket } from '../context/SocketContext'
@@ -158,6 +160,7 @@ function DashboardPanel({ campaignId }) {
   const [busy, setBusy] = useState(false)
   const socket = useSocket()
   const toast = useToast()
+  const [celebrate, setCelebrate] = useState(false)
 
   useEffect(() => {
     api.get(`/campaigns/${campaignId}`).then(setCampaign)
@@ -168,7 +171,13 @@ function DashboardPanel({ campaignId }) {
     if (!socket) return
     socket.emit('join', campaignId)
     const onProgress = (stats) => setCampaign((c) => (c ? { ...c, stats } : c))
-    const onStatus = ({ status }) => setCampaign((c) => (c ? { ...c, status } : c))
+    const onStatus = ({ status }) => {
+      setCampaign((c) => (c ? { ...c, status } : c))
+      if (status === 'completed') {
+        setCelebrate(true)
+        setTimeout(() => setCelebrate(false), 2400)
+      }
+    }
     const onLog = (log) => setLogs((prev) => [log, ...prev].slice(0, 500))
     socket.on('campaign:progress', onProgress)
     socket.on('campaign:status', onStatus)
@@ -196,13 +205,26 @@ function DashboardPanel({ campaignId }) {
 
   const exportCsv = () => window.open(`/api/campaigns/${campaignId}/export`, '_blank')
 
-  if (!campaign) return <div className="p-8 text-center text-sm text-slate-400">Loading campaign…</div>
+  if (!campaign) return <Card><CardSkeleton /></Card>
 
   const s = campaign.stats
   const status = campaign.status
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 relative">
+      <AnimatePresence>
+        {celebrate && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+            className="absolute -top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-brand-gradient text-white px-4 py-2 shadow-glow-lg text-sm font-medium"
+          >
+            <PartyPopper size={16} /> Campaign complete — {s.sent} sent, {s.failed} failed
+          </motion.div>
+        )}
+      </AnimatePresence>
       <Card>
         <CardHeader
           title={campaign.name}
@@ -243,8 +265,8 @@ function DashboardPanel({ campaignId }) {
           }
         />
         <div className="p-5 space-y-5">
-          <ProgressBar value={s.progress} />
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <ProgressBar value={s.progress} animated={status === 'running'} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <StatCard label="Total" value={s.total} icon={Mail} tone="slate" />
             <StatCard label="Sent" value={s.sent} icon={CheckCircle2} tone="emerald" />
             <StatCard label="Failed" value={s.failed} icon={XCircle} tone="rose" />

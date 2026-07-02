@@ -2,7 +2,8 @@ import { forwardRef } from 'react'
 import { Loader2 } from 'lucide-react'
 
 const VARIANTS = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-600/20 disabled:bg-brand-400',
+  primary:
+    'bg-brand-gradient bg-200 bg-left hover:bg-right text-white shadow-glow hover:shadow-glow-lg disabled:opacity-50 disabled:shadow-none',
   secondary:
     'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 disabled:bg-rose-300',
@@ -23,7 +24,7 @@ export const Button = forwardRef(function Button(
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center rounded-lg font-medium transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100 ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100 ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...props}
     >
       {loading && <Loader2 size={16} className="animate-spin" />}
