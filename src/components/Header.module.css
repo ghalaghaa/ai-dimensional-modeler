@@ -52,3 +52,15 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navActive {
+  color: var(--gold) !important;
+  border-color: var(--border) !important;
+  background: var(--gold-faint) !important;
+}

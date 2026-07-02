@@ -24,7 +24,7 @@
 // }
 import styles from './Header.module.css';
 
-export default function Header() {
+export default function Header({ mode, onModeChange }) {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
@@ -34,6 +34,20 @@ export default function Header() {
             <h1 className={styles.title}>AI Dimensional Modeler</h1>
           </div>
         </div>
+        <nav className={styles.nav}>
+          <button
+            className={`btn-ghost ${mode === 'sql' ? styles.navActive : ''}`}
+            onClick={() => onModeChange('sql')}
+          >
+            SQL Analyzer
+          </button>
+          <button
+            className={`btn-ghost ${mode === 'voice' ? styles.navActive : ''}`}
+            onClick={() => onModeChange('voice')}
+          >
+            🎙️ Voice Assistant
+          </button>
+        </nav>
       </div>
     </header>
   );

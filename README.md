@@ -30,3 +30,16 @@ npm run dev
 5. **تصدير** — JSON أو Excel
 ---
 
+## 🎙️ المساعد الصوتي للكول سنتر (Voice Assistant)
+
+تبويب جديد بجانب "SQL Analyzer" في الأعلى يشغّل بوت محادثة صوتي كامل باللهجة
+السعودية: تسجّل صوتك ← يتحول لنص (Groq Whisper) ← يرد عليك ذكاء اصطناعي
+(Groq LLM) ← يتحول الرد لصوت سعودي طبيعي بموديل
+[NAMAA-Saudi-TTS](https://huggingface.co/NAMAA-Space/NAMAA-Saudi-TTS).
+
+**قبل التجربة** لازم تشغّل خدمة الـ TTS بشكل منفصل (تحتاج GPU/اتصال إنترنت
+لتحميل الموديل) — راجع [`tts_service/README.md`](./tts_service/README.md)،
+وعيّن `VITE_TTS_SERVICE_URL` في `.env` على رابطها.
+
+---
+

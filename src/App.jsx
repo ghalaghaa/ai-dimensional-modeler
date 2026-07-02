@@ -4,11 +4,13 @@ import FileUploader from './components/FileUploader';
 import FileList from './components/FileList';
 import QueryPreview from './components/QueryPreview';
 import ModelResult from './components/ModelResult';
+import CallCenterAssistant from './components/CallCenterAssistant';
 import { analyzeQuery } from './utils/claudeApi';
 import { exportExcel } from './utils/exportUtils';
 import styles from './App.module.css';
 
 export default function App() {
+  const [mode, setMode] = useState('sql');        // 'sql' | 'voice'
   const [files, setFiles] = useState([]);         // [{fileName, content}]
   const [statuses, setStatuses] = useState([]);   // 'idle' | 'loading' | 'done' | 'error'
   const [results, setResults] = useState([]);     // [{fileName, result, error}]
@@ -65,9 +67,13 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Header />
+      <Header mode={mode} onModeChange={setMode} />
 
       <main className={styles.main}>
+        {mode === 'voice' && <CallCenterAssistant />}
+
+        {mode === 'sql' && (
+        <>
         {/* ── Upload zone (shown when no files) ── */}
         {files.length === 0 && (
           <div className={styles.uploadZone}>
@@ -176,6 +182,8 @@ export default function App() {
               )}
             </div>
           </div>
+        )}
+        </>
         )}
       </main>
     </div>
