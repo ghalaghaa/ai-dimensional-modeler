@@ -52,3 +52,20 @@ git push -u origin main
 Repeat per project, substituting the folder name and branch name. If
 history isn't important, it's even simpler: just copy the folder into a
 fresh `git init`.
+
+### Or do all 10 at once
+
+`scripts/split_and_push.sh` automates the above for every project using
+the GitHub CLI (`gh`) — run it locally (not in this sandbox, since it
+needs your own GitHub login):
+
+```bash
+git clone <this-repo-url> && cd ai-dimensional-modeler
+git checkout claude/github-portfolio-projects-km0apg
+gh auth login   # if not already logged in
+bash portfolio/scripts/split_and_push.sh
+```
+
+It creates 10 public repos under your GitHub account (one per project,
+names are listed at the top of the script — edit them there if you want
+different names) and pushes each with its preserved commit history.
