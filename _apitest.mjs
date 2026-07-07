@@ -1,5 +1,5 @@
 // The API key lives on the server (serverless function /api/groq), never in the browser.
-const MODEL = import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile';
+const MODEL = process.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 /* ─────────────────────────────────────────────────────────
    SYSTEM PROMPT  —  Senior Enterprise Data Architect

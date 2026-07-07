@@ -6,6 +6,7 @@ import QueryPreview from './components/QueryPreview';
 import ModelResult from './components/ModelResult';
 import { analyzeQuery } from './utils/claudeApi';
 import { exportExcel } from './utils/exportUtils';
+import { ACCEPT, readUploadedFiles } from './utils/fileIntake';
 import styles from './App.module.css';
 
 export default function App() {
@@ -19,7 +20,7 @@ export default function App() {
     setStatuses((s) => s.map((v, i) => (i === idx ? 'loading' : v)));
     setTab('model');
     try {
-      const result = await analyzeQuery(file.content, file.fileName);
+      const result = await analyzeQuery(file.content, file.fileName, file.context);
       setResults((r) => r.map((v, i) => (i === idx ? { fileName: file.fileName, content: file.content, result } : v)));
       setStatuses((s) => s.map((v, i) => (i === idx ? 'done' : v)));
     } catch (err) {
@@ -100,12 +101,12 @@ export default function App() {
                   onClick={() => document.getElementById('add-more')?.click()}>
                   + Add Files
                 </button>
-                <input id="add-more" type="file" accept=".sql" multiple style={{ display: 'none' }}
+                <input id="add-more" type="file" accept={ACCEPT} multiple style={{ display: 'none' }}
                   onChange={(e) => {
-                    const readers = Array.from(e.target.files).filter(f => f.name.endsWith('.sql')).map(
-                      f => new Promise(res => { const r = new FileReader(); r.onload = ev => res({ fileName: f.name, content: ev.target.result }); r.readAsText(f, 'utf-8'); })
-                    );
-                    Promise.all(readers).then(handleFilesLoaded);
+                    readUploadedFiles(e.target.files).then((items) => {
+                      const usable = items.filter((it) => it.content);
+                      if (usable.length) handleFilesLoaded(usable);
+                    });
                     e.target.value = '';
                   }} />
 

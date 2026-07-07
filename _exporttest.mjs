@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import { createRequire as _cr } from 'node:module';
+const XLSX = _cr(import.meta.url)('xlsx');
 
 /* ─────────────────────────────────────────────────────────
    Source-to-Target mapping workbook (Kimball star schema).
