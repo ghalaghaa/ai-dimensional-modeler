@@ -1,4 +1,4 @@
-# مولّد الموديل الأبعادي — AI Dimensional Modeler
+# AI Dimensional Modeler
 
 ## الإعداد السريع
 
@@ -18,6 +18,7 @@ npm run dev
 ```
 
 افتح المتصفح على: http://localhost:5173
+https://ai-dimensional-modeler.vercel.app
 
 ---
 
