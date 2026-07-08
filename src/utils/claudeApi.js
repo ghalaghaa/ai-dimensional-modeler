@@ -210,6 +210,19 @@ appears literally in the SQL FROM/JOIN. In particular NEVER use an
 SSIS ".dtsx" package name or a presentation/report-only table from the
 metadata as a source_table. source_tables come from the SQL, period.
 
+ANTI-JOIN & FILTER-ONLY TABLES (CRITICAL — DO NOT DROP THEM): a table is
+still a source table even when it is used ONLY to filter or exclude rows.
+If a schema-qualified table (Database.Schema.Table) appears in ANY FROM or
+JOIN anywhere in the SQL — INCLUDING inside a WITH/CTE body, an anti-join
+(LEFT JOIN … WHERE … IS NULL), a semi-join, NOT EXISTS, or NOT IN — it
+MUST be listed in source_tables. This holds even when the final query
+references it only through a CTE alias. Example:
+  WITH X AS (SELECT id FROM db.schema.excluded WHERE flag='Y') …
+  LEFT JOIN X ON … WHERE X.id IS NULL
+Here db.schema.excluded IS a source table (and belongs to the fact it
+filters) even though the main query only mentions the CTE alias X. The CTE
+name X is NOT a source_table; the real base table db.schema.excluded is.
+
 ═══════════════════════════════════════════════════════════
 STEP 8 — ETL COLUMN MAPPINGS (TRANSFORMATION RULES)
 ═══════════════════════════════════════════════════════════
@@ -296,6 +309,28 @@ For EACH fact and EACH dimension, populate two fields:
   base tables — never cite D1 / Union1 / subquery aliases.
 
 ═══════════════════════════════════════════════════════════
+STEP 8C — WHERE / FILTER CAPTURE (DO NOT DROP FILTERS)
+═══════════════════════════════════════════════════════════
+Every WHERE / HAVING condition is part of the ETL extract logic and MUST
+be captured — NEVER default filter_condition to "N/A" when the SQL has a
+real WHERE/HAVING that restricts rows.
+  · Put each filter predicate in the filter_condition of the join_rule
+    whose table it references (match by the table's alias). Row-level
+    filters on the fact's base table go on that base table's join_rule.
+  · Keep the REAL predicate text with its real columns, e.g.
+    "a.SCCAD = 0", "TRIM(g.GFCTP) <> 'PC'",
+    "SCOAD <= yesterday (reporting date)". Do NOT invent filters that are
+    not in the SQL.
+  · Anti-join / exclusion predicates are filters too — record them, e.g.
+    "pbg.customer_number_external IS NULL — exclude PBG customers",
+    "NOT EXISTS (…)", "col NOT IN (…)".
+  · UNION of segments: capture the WHERE core that is shared by every
+    segment. The per-segment category list that DEFINES each UNION branch
+    (e.g. account-type IN (...)) is that branch's degenerate dimension /
+    Name, NOT a global filter — do not AND those alternative lists together.
+  · Use "N/A" ONLY when a join genuinely has no related WHERE/HAVING.
+
+═══════════════════════════════════════════════════════════
 STEP 9 — STAR SCHEMA VALIDATION
 ═══════════════════════════════════════════════════════════
 Before output verify:
@@ -319,6 +354,11 @@ Before output verify:
      origin and role; and EVERY entry whose role is "measure" or
      "classification_dimension" is reflected downstream with its FULL
      expression (no simplification, no "Direct copy")?
+ 15. EVERY schema-qualified table in ANY FROM/JOIN — including CTE bodies
+     and anti-join / NOT EXISTS / NOT IN exclusions — listed in
+     source_tables (and attached to the fact/dimension it feeds)?
+ 16. Real WHERE/HAVING filters captured in filter_condition (NOT defaulted
+     to "N/A" when the SQL clearly restricts rows)?
 If ANY answer is NO → re-analyze and FIX before returning JSON.
 
 Return VALID JSON ONLY. No markdown. No comments.
@@ -400,7 +440,7 @@ Return ONLY this JSON (no other text):
           "secondary_source_table": "",
           "join_type": "INNER JOIN | LEFT JOIN",
           "join_condition": "real ON predicate with real columns",
-          "filter_condition": "N/A",
+          "filter_condition": "real WHERE/HAVING predicate(s) for this join — 'N/A' ONLY if none",
           "purpose": ""
         }
       ]
@@ -437,7 +477,7 @@ Return ONLY this JSON (no other text):
           "secondary_source_table": "",
           "join_type": "INNER JOIN | LEFT JOIN",
           "join_condition": "real ON predicate with real columns",
-          "filter_condition": "N/A",
+          "filter_condition": "real WHERE/HAVING predicate(s) for this join — 'N/A' ONLY if none",
           "purpose": ""
         }
       ],
@@ -445,7 +485,7 @@ Return ONLY this JSON (no other text):
     }
   ],
 
-  "source_tables": ["every table from SQL FROM/JOIN — exact names only"],
+  "source_tables": ["every schema-qualified table from ANY SQL FROM/JOIN, including CTE bodies and anti-join/exclusion tables — exact names only"],
 
   "star_schema_validation": {
     "all_source_tables_included": true,
@@ -623,6 +663,154 @@ function _buildInferredDimDate() {
     source_table: '⚠ Recommended – no source table in SQL',
     source_tables: [], join_rules: [], inferred: true, _reconciled: true,
   };
+}
+
+/* ─── SQL FROM/JOIN table + alias extraction (real base tables only) ───
+   A real source table is schema-qualified (contains a dot). Bare
+   identifiers are CTE names / derived-table aliases and are skipped. The
+   scan covers the WHOLE SQL, including CTE bodies, so a table used only in
+   an anti-join or inside a WITH block is still discovered. Returns an
+   array of { table, alias }. */
+function _tableRefs(sql) {
+  const refs = [];
+  const re = /\b(?:FROM|JOIN)\s+([A-Za-z_]\w*(?:\.\w+)+)\s*(?:\bAS\b\s+)?([A-Za-z_]\w*)?/gi;
+  let m;
+  while ((m = re.exec(String(sql || '')))) {
+    let alias = m[2] || '';
+    if (/^(on|inner|left|right|full|cross|join|where|group|order|union|having|limit|using|as)$/i.test(alias)) alias = '';
+    refs.push({ table: m[1], alias });
+  }
+  return refs;
+}
+
+/* Case-insensitive union that preserves the existing list and first-seen
+   casing — used to merge discovered base tables into source_tables. */
+function _mergeTables(existing, incoming) {
+  const out = Array.isArray(existing) ? existing.filter(Boolean).slice() : [];
+  const seen = new Set(out.map((t) => String(t).toLowerCase()));
+  (incoming || []).forEach((t) => {
+    const k = String(t).toLowerCase();
+    if (t && !seen.has(k)) { seen.add(k); out.push(t); }
+  });
+  return out;
+}
+
+/* Split a WHERE fragment into top-level (paren-depth 0) predicates on AND,
+   respecting quotes and parentheses so an OR-group or a function call with
+   commas stays intact. */
+function _splitTopAnd(clause) {
+  const s = String(clause || '');
+  const parts = [];
+  let depth = 0, q = '', start = 0, i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (q) { if (ch === q) q = ''; i++; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { q = ch; i++; continue; }
+    if (ch === '(') { depth++; i++; continue; }
+    if (ch === ')') { depth--; i++; continue; }
+    if (depth === 0 && /[aA]/.test(ch) && /^and$/i.test(s.slice(i, i + 3)) &&
+        /\s/.test(s[i - 1] ?? ' ') && /\s/.test(s[i + 3] ?? ' ')) {
+      parts.push(s.slice(start, i).trim()); i += 3; start = i; continue;
+    }
+    i++;
+  }
+  parts.push(s.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/* Every top-level WHERE clause in the SQL, each as an array of predicates.
+   A clause ends at its enclosing ')' (e.g. a CTE close) or a top-level
+   GROUP BY / HAVING / ORDER BY / UNION / LIMIT / WINDOW. */
+function _whereClauses(sql) {
+  const s = String(sql || '');
+  const out = [];
+  const re = /\bWHERE\b/gi;
+  let m;
+  while ((m = re.exec(s))) {
+    let depth = 0, q = '';
+    const start = m.index + m[0].length;
+    let i = start;
+    for (; i < s.length; i++) {
+      const ch = s[i];
+      if (q) { if (ch === q) q = ''; continue; }
+      if (ch === "'" || ch === '"' || ch === '`') { q = ch; continue; }
+      if (ch === '(') { depth++; continue; }
+      if (ch === ')') { if (depth === 0) break; depth--; continue; }
+      if (depth === 0 && /\s/.test(ch) &&
+          /^\s+(group\s+by|having|order\s+by|union|limit|window)\b/i.test(s.slice(i))) break;
+    }
+    const preds = _splitTopAnd(s.slice(start, i));
+    if (preds.length) out.push(preds);
+  }
+  return out;
+}
+
+/* The report's global WHERE filter: for a single WHERE, all its predicates;
+   for a UNION of segments, the predicate core shared by EVERY segment
+   (predicates unique to one branch — the category list that defines a UNION
+   segment, or a stray CTE filter — are excluded so nothing false is ANDed). */
+function _reportFilters(sql) {
+  const clauses = _whereClauses(sql);
+  if (!clauses.length) return [];
+  const norm = (p) => p.replace(/\s+/g, ' ').trim().toLowerCase();
+  const count = new Map();
+  clauses.forEach((preds) => {
+    new Set(preds.map(norm)).forEach((k) => {
+      const rep = preds.find((p) => norm(p) === k);
+      const cur = count.get(k) || { n: 0, text: rep };
+      cur.n++; count.set(k, cur);
+    });
+  });
+  if (clauses.length === 1) return [...count.values()].map((v) => v.text);
+  const max = Math.max(...[...count.values()].map((v) => v.n));
+  if (max < 2) return [];
+  return [...count.values()].filter((v) => v.n === max).map((v) => v.text);
+}
+
+/* Surface the report's WHERE filters into each fact's join_rules, placing a
+   predicate on the join whose table it references (alias match, secondary
+   preferred). Only fills cells the model left empty/N/A — never overwrites a
+   filter the model already captured. Returns the number of predicates added. */
+function _applyReportFilters(model, sql) {
+  const facts = Array.isArray(model.facts) ? model.facts : [];
+  if (!facts.length) return 0;
+  const preds = _reportFilters(sql);
+  if (!preds.length) return 0;
+
+  const tableAlias = new Map();   // lower(full table) → alias
+  _tableRefs(sql).forEach((r) => {
+    const k = r.table.toLowerCase();
+    if (r.alias && !tableAlias.has(k)) tableAlias.set(k, r.alias.toLowerCase());
+  });
+  const aliasesIn = (p) => {
+    const set = new Set(); const re = /\b([A-Za-z_]\w*)\s*\./g; let m;
+    while ((m = re.exec(p))) set.add(m[1].toLowerCase());
+    return set;
+  };
+
+  const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  let added = 0;
+  facts.forEach((f) => {
+    const jrs = Array.isArray(f.join_rules) ? f.join_rules : [];
+    if (!jrs.length) return;
+    // Predicates the model already captured (any non-empty filter cell) are
+    // left alone — don't re-add them elsewhere as duplicates.
+    const already = norm(jrs.map((jr) => jr.filter_condition).filter((c) => c && !/^n\/?a$/i.test(String(c).trim())).join(' AND '));
+    const bucket = new Map(jrs.map((jr) => [jr, []]));
+    preds.forEach((p) => {
+      if (already.includes(norm(p))) return;
+      const al = aliasesIn(p);
+      const bySec = jrs.find((jr) => { const a = tableAlias.get(String(jr.secondary_source_table).toLowerCase()); return a && al.has(a); });
+      const byPri = jrs.find((jr) => { const a = tableAlias.get(String(jr.primary_source_table).toLowerCase()); return a && al.has(a); });
+      bucket.get(bySec || byPri || jrs[0]).push(p);
+    });
+    jrs.forEach((jr) => {
+      const cur = String(jr.filter_condition || '').trim();
+      const list = bucket.get(jr);
+      if ((!cur || /^n\/?a$/i.test(cur)) && list.length) { jr.filter_condition = list.join(' AND '); added += list.length; }
+    });
+  });
+  return added;
 }
 
 export function reconcileCaseAnalysis(model, sqlContent = '') {
@@ -815,6 +1003,33 @@ export function reconcileCaseAnalysis(model, sqlContent = '') {
     addedDimDate = true;
   }
 
+  // SOURCE-TABLE COMPLETENESS (STEP 7): every schema-qualified table that
+  // appears in ANY FROM/JOIN — including CTE bodies and anti-join/exclusion
+  // tables — must be listed. The model sometimes drops a table it only sees
+  // through a CTE alias (e.g. udm_service.pbg_customer behind a WITH … PBG).
+  let addedTables = [];
+  if (sqlContent) {
+    const sqlTables = _tableRefs(sqlContent).map((r) => r.table);
+    const before = new Set((model.source_tables || []).map((t) => String(t).toLowerCase()));
+    model.source_tables = _mergeTables(model.source_tables, sqlTables);
+    addedTables = model.source_tables.filter((t) => !before.has(String(t).toLowerCase()));
+    if (addedTables.length && model.facts.length) {
+      // Anti-join / filter-only tables belong to the fact they restrict.
+      const onTarget = new Set();
+      [...model.facts, ...model.dimensions].forEach((t) =>
+        (t.source_tables || []).forEach((s) => onTarget.add(String(s).toLowerCase())));
+      const f0 = model.facts[0];
+      f0.source_tables = Array.isArray(f0.source_tables) ? f0.source_tables : [];
+      addedTables.forEach((t) => {
+        if (!onTarget.has(String(t).toLowerCase())) f0.source_tables = _mergeTables(f0.source_tables, [t]);
+      });
+    }
+  }
+
+  // FILTER CAPTURE (STEP 8C): surface the report's WHERE conditions into the
+  // join_rules instead of leaving them as N/A. Fills only empty cells.
+  const filledFilters = sqlContent ? _applyReportFilters(model, sqlContent) : 0;
+
   const notes = [];
   if (addedDimDate) {
     notes.push('Added mandatory DIM_DATE (inferred) — the SQL contains date logic but the model omitted the date dimension.');
@@ -831,6 +1046,12 @@ export function reconcileCaseAnalysis(model, sqlContent = '') {
     mergedBranches.forEach((labels, key) => {
       notes.push(`${key} consolidates ${labels.length + 1} source CASE branch(es): ${labels.join(', ')}.`);
     });
+  }
+  if (addedTables.length) {
+    notes.push(`Added ${addedTables.length} source table(s) present in the SQL FROM/JOIN but missing from the model (incl. CTE/anti-join tables): ${addedTables.join(', ')}.`);
+  }
+  if (filledFilters) {
+    notes.push(`Captured ${filledFilters} WHERE/HAVING filter condition(s) from the SQL into join rules that were left as N/A.`);
   }
   if (notes.length) {
     const tag = notes.join('\n');
