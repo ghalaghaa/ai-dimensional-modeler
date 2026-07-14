@@ -50,6 +50,7 @@ export default function FileUploader({ onFilesLoaded }) {
           <span className="badge badge-gold">Cognos SQL</span>
           <span className="badge badge-teal">Cloudera HiveQL</span>
           <span className="badge badge-blue">Report .xlsx</span>
+          <span className="badge badge-teal">SSIS .dtsx/.conmgr</span>
         </div>
       </div>
     </div>

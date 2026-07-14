@@ -11,11 +11,12 @@ import * as XLSX from 'xlsx';
 const SQL_EXT = /\.sql$/i;
 const XLSX_EXT = /\.(xlsx|xls)$/i;
 const DTSX_EXT = /\.dtsx$/i;
+const CONMGR_EXT = /\.conmgr$/i;
 
-export const ACCEPT = '.sql,.xlsx,.xls,.dtsx';
+export const ACCEPT = '.sql,.xlsx,.xls,.dtsx,.conmgr';
 
 export function isSupported(name = '') {
-  return SQL_EXT.test(name) || XLSX_EXT.test(name) || DTSX_EXT.test(name);
+  return SQL_EXT.test(name) || XLSX_EXT.test(name) || DTSX_EXT.test(name) || CONMGR_EXT.test(name);
 }
 
 const isSqlSheetName = (n = '') => /cloudera[_ ]?sql/i.test(n);
@@ -127,7 +128,8 @@ export function extractSqlFromWorkbook(data) {
 
 /* Read a browser FileList into [{ fileName, content, kind }].
    kind: 'sql' (report query to analyze) · 'report' (.xlsx with Cloudera SQL)
-   · 'dtsx' (SSIS package — raw XML for the lineage parser).
+   · 'dtsx' (SSIS package) · 'conmgr' (SSIS project connection — supplies
+   the database name for tables the packages reference by GUID).
    Unsupported files and empties are dropped by the caller. */
 export function readUploadedFiles(fileList) {
   const files = Array.from(fileList).filter((f) => isSupported(f.name));
@@ -149,8 +151,9 @@ export function readUploadedFiles(fileList) {
               resolve({ fileName: file.name, content: sql, context, kind: 'report' });
             };
             reader.readAsArrayBuffer(file);
-          } else if (DTSX_EXT.test(file.name)) {
-            reader.onload = (e) => resolve({ fileName: file.name, content: e.target.result, kind: 'dtsx' });
+          } else if (DTSX_EXT.test(file.name) || CONMGR_EXT.test(file.name)) {
+            const kind = DTSX_EXT.test(file.name) ? 'dtsx' : 'conmgr';
+            reader.onload = (e) => resolve({ fileName: file.name, content: e.target.result, kind });
             reader.readAsText(file, 'utf-8');
           } else {
             reader.onload = (e) => resolve({ fileName: file.name, content: e.target.result, kind: 'sql' });

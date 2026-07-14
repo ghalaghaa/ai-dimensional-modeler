@@ -7,7 +7,7 @@ import ModelResult from './components/ModelResult';
 import { analyzeQuery } from './utils/claudeApi';
 import { exportExcel } from './utils/exportUtils';
 import { ACCEPT, readUploadedFiles } from './utils/fileIntake';
-import { emptyLineage, mergeLineage, parseDtsxLineage, parseSqlScriptLineage } from './utils/ssisLineage';
+import { emptyLineage, addLineageFiles } from './utils/ssisLineage';
 import styles from './App.module.css';
 
 export default function App() {
@@ -32,26 +32,20 @@ export default function App() {
   };
 
   // عند إفلات الملف: يبدأ التحليل تلقائياً مباشرة.
-  // .dtsx (وكذلك SQL load scripts التي تحتوي INSERT INTO) تُوجَّه إلى
-  // خريطة الـ lineage بدلاً من التحليل — هي مصدر "الجداول الأصلية".
+  // .dtsx/.conmgr (وكذلك SQL load scripts التي تحتوي INSERT INTO) تُوجَّه
+  // إلى خريطة الـ lineage بدلاً من التحليل — هي مصدر "الجداول الأصلية".
   const handleFilesLoaded = (incoming) => {
     const newFiles = [];
+    const lineageFiles = [];
     incoming.forEach((f) => {
-      if (f.kind === 'dtsx') {
-        const entries = parseDtsxLineage(f.content, f.fileName);
-        if (entries.length) setLineage((prev) => mergeLineage(prev, entries));
-        else alert(`No source→target mappings found in ${f.fileName}`);
-        return;
-      }
+      if (f.kind === 'dtsx' || f.kind === 'conmgr') { lineageFiles.push(f); return; }
       if (f.kind === 'sql' && /\b(insert\s+into|merge\s+into|merge)\b/i.test(f.content)) {
-        const entries = parseSqlScriptLineage(f.content, f.fileName);
-        if (entries.length) {
-          setLineage((prev) => mergeLineage(prev, entries));
-          return; // load script, not a report query — don't analyze it
-        }
+        lineageFiles.push(f); // load script, not a report query — don't analyze it
+        return;
       }
       newFiles.push(f);
     });
+    if (lineageFiles.length) setLineage((prev) => addLineageFiles(prev, lineageFiles));
     if (!newFiles.length) return;
     const base = files.length;
     setFiles((prev) => [...prev, ...newFiles]);
@@ -98,7 +92,7 @@ export default function App() {
               <FileUploader onFilesLoaded={handleFilesLoaded} />
               {lineage.entries.length > 0 && (
                 <p style={{ marginTop: 12, textAlign: 'center' }}>
-                  🔗 SSIS Lineage loaded: {lineage.entries.length} table mapping(s) from {lineage.packages.size} package(s)
+                  🔗 SSIS Lineage loaded: {lineage.entries.length} table mapping(s) from {lineage.packageNames.size} package(s)
                   — now upload the report SQL files
                 </p>
               )}
@@ -149,7 +143,7 @@ export default function App() {
               {lineage.entries.length > 0 && (
                 <div className={styles.exportBox}>
                   <p className={styles.exportLabel}>
-                    🔗 SSIS Lineage: {lineage.entries.length} table mapping(s) from {lineage.packages.size} package(s)
+                    🔗 SSIS Lineage: {lineage.entries.length} table mapping(s) from {lineage.packageNames.size} package(s)
                   </p>
                 </div>
               )}

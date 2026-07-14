@@ -135,7 +135,7 @@ function readmeRows(results) {
 function readmeLineageRow(lineage) {
   return [
     'SSIS Lineage',
-    `Original source-system tables resolved from ${lineage.packages.size} SSIS package(s) / load script(s) — see the Source_Lineage sheet and the "Original Source Table (RAW)" columns.`,
+    `Original source-system tables resolved from ${lineage.packageNames.size} SSIS package(s) / load script(s) — see the Source_Lineage sheet and the "Original Source Table (RAW)" columns.`,
   ];
 }
 
@@ -363,7 +363,7 @@ export function buildWorkbook(results, lineage) {
   /* ── SSIS lineage enrichment ──
      Insert "Original Source Table(s) (RAW)" next to every mart-layer source
      column, and add a Source_Lineage sheet documenting mart → original. */
-  const lineageRows = [['Cognos/Mart Table', 'Original Source Table(s)', 'SSIS Package(s)', 'Status']];
+  const lineageRows = [['Cognos/Mart Table', 'Original Source Table(s)', 'Staging Chain (via)', 'SSIS Package(s)', 'Status']];
   if (hasLineage) {
     // Source_To_Target_Map: after 'Source Tables' (index 3)
     mapRows.forEach((row, i) =>
@@ -383,6 +383,7 @@ export function buildWorkbook(results, lineage) {
         lineageRows.push([
           t,
           hit ? hit.sources.join(', ') : '',
+          hit ? (hit.intermediates || []).join(', ') : '',
           hit ? hit.packages.join(', ') : '',
           hit ? 'Mapped from SSIS' : '⚠ No SSIS package uploaded for this table',
         ]);
@@ -404,7 +405,7 @@ export function buildWorkbook(results, lineage) {
   add(readme, 'README', [26, 92]);
   add(mapRows, 'Source_To_Target_Map',
     hasLineage ? [12, 12, 26, 40, 44, 40, 24, 60] : [12, 12, 26, 40, 40, 24, 60]);
-  if (hasLineage) add(lineageRows, 'Source_Lineage', [36, 60, 36, 34]);
+  if (hasLineage) add(lineageRows, 'Source_Lineage', [36, 60, 44, 36, 34]);
   add(joinRows, 'Source_Join_Rules', [12, 24, 26, 26, 12, 48, 32, 40]);
   add(colRows, 'Column_Mapping',
     hasLineage ? [12, 24, 26, 16, 26, 34, 26, 46, 22, 10, 14, 20, 16] : [12, 24, 26, 16, 26, 26, 46, 22, 10, 14, 20, 16]);

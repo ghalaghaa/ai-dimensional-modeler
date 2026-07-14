@@ -4,20 +4,24 @@ import { tableRefs, normTable, cleanTableName } from './sqlTables';
    SSIS lineage extraction.
 
    The report SQL only ever references the Cognos mart layer
-   (e.g. Finance_MIS.dbo.D_Customer_Details_Month_End). The mapping
-   from mart table back to the ORIGINAL source-system tables lives in
-   the SSIS packages (.dtsx) / SQL load scripts that populate the mart.
+   (e.g. Finance_MIS.dbo.F_AVG_RBG_MIS_ALL_YTD_AVG). The mapping from
+   mart table back to the ORIGINAL source-system tables lives in the
+   SSIS packages (.dtsx) / SQL load scripts that populate the mart.
 
-   This module parses those files into lineage entries
-   { package, target, sources[] } and answers lookups:
-   mart table → original source tables.
+   Verified against the project's real packages (COGNOSSRV):
+   · Connections are PROJECT-level .conmgr files; components reference
+     them as connectionManagerRefId="{GUID}:invalid" — the catalog
+     (database) comes from the .conmgr's Initial Catalog, keyed by GUID.
+   · Loads are CHAINED (F_X_YTD ← F_X_Rows ← 40+ F_AVG_* staging ←
+     core files like bajsrpf) — lookups resolve transitively.
+   · SqlCommands may reference BARE table names (FROM bajsrpf) whose
+     database is implied by the component's connection.
+   · SqlCommands contain commented-out SQL — comments are stripped.
 
-   Supported inputs:
-   · .dtsx (SSIS 2005-2008 and 2012+ XML formats):
-     - Data-flow pipelines: OLE DB Source (SqlCommand / OpenRowset)
-       paired with OLE DB Destination (OpenRowset) per <pipeline>.
-     - Execute SQL Tasks: INSERT INTO / SELECT INTO / MERGE statements.
-   · .sql load scripts: INSERT INTO / SELECT INTO / MERGE / UPDATE-FROM.
+   Store lifecycle: addLineageFiles(store, files) accepts .conmgr /
+   .dtsx / .sql load scripts IN ANY ORDER — raw package text is kept
+   and all entries are re-derived on every add, so a catalog arriving
+   after its package still qualifies that package's tables.
 ───────────────────────────────────────────────────────── */
 
 /* Decode the XML entities SSIS uses inside attribute/property values. */
@@ -32,24 +36,56 @@ function xmlDecode(s) {
     .replace(/&amp;/g, '&');
 }
 
-/* ── SQL-statement lineage (shared by Execute SQL tasks & .sql scripts) ──
+/* Strip -- line comments and block comments so commented-out SQL never
+   contributes phantom source tables. */
+function stripSqlComments(sql) {
+  return String(sql ?? '')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, ' ');
+}
+
+const guidOf = (s) => /\{[0-9a-f-]+\}/i.exec(String(s ?? ''))?.[0]?.toLowerCase() || '';
+
+const SQL_KEYWORDS = /^(select|where|group|order|union|having|on|as|inner|left|right|full|cross|join|and|or|not|case|when|then|else|end|with|values|set|from|into|exists|all|distinct|top)$/i;
+
+/* Source tables read by a SQL command: schema-qualified refs (quoted or
+   not) PLUS bare FROM/JOIN identifiers (their database is implied by the
+   SSIS connection), excluding the command's own CTE names. */
+function sourceTablesOf(sqlRaw) {
+  const sql = stripSqlComments(sqlRaw);
+  const out = tableRefs(sql).map((r) => r.table);
+  const cteNames = new Set();
+  const CTE_RE = /(?:\bWITH\s+|,\s*)("[^"]+"|\[[^\]]+\]|[A-Za-z_]\w*)\s+AS\s*\(/gi;
+  let m;
+  while ((m = CTE_RE.exec(sql))) cteNames.add(normTable(cleanTableName(m[1])));
+  // The lookahead excludes word chars too, so \w* cannot backtrack one
+  // character to sneak past the "not followed by a dot" test (which would
+  // truncate Finance_MIS.dbo.X into a phantom source "Finance_MI").
+  const BARE_RE = /\b(?:FROM|JOIN)\s+(?:\[([^\].]+)\]|([A-Za-z_]\w*))(?![\w.([])/gi;
+  while ((m = BARE_RE.exec(sql))) {
+    const t = cleanTableName(m[1] || m[2]);
+    if (!t || t.includes('.') || SQL_KEYWORDS.test(t) || cteNames.has(normTable(t))) continue;
+    if (t.startsWith('#') || t.startsWith('@')) continue;
+    out.push(t);
+  }
+  return [...new Set(out)];
+}
+
+/* ── SQL-statement lineage (Execute SQL tasks & .sql load scripts) ──
    Returns [{ target, sources }] for every statement that writes a table. */
-export function sqlStatementLineage(sql) {
-  const s = String(sql || '');
+export function sqlStatementLineage(sqlRaw) {
+  const sql = stripSqlComments(sqlRaw);
   const targets = new Set();
   const out = [];
   const TARGET_RE = /\b(?:INSERT\s+INTO|MERGE\s+INTO|MERGE|SELECT\s+[\s\S]{0,2000}?\bINTO)\s+((?:"[^"]+"|\[[^\]]+\]|`[^`]+`|[A-Za-z_]\w*)(?:\s*\.\s*(?:"[^"]+"|\[[^\]]+\]|`[^`]+`|[A-Za-z_]\w*)?)*)/gi;
   let m;
-  while ((m = TARGET_RE.exec(s))) {
+  while ((m = TARGET_RE.exec(sql))) {
     const t = cleanTableName(m[1]);
-    // #temp tables and single-part names that are obviously variables are kept
-    // only if they look like real tables; temp tables are never lineage targets.
     if (!t || t.startsWith('#') || t.startsWith('@')) continue;
     targets.add(t);
   }
   if (!targets.size) return out;
-  const sources = [...new Set(tableRefs(s).map((r) => r.table))]
-    .filter((t) => !t.startsWith('#') && !t.startsWith('@'));
+  const sources = sourceTablesOf(sql).filter((t) => !t.startsWith('#') && !t.startsWith('@'));
   targets.forEach((target) => {
     const srcs = sources.filter((x) => normTable(x) !== normTable(target));
     if (srcs.length) out.push({ target, sources: srcs });
@@ -57,32 +93,53 @@ export function sqlStatementLineage(sql) {
   return out;
 }
 
-/* ── .dtsx parsing ─────────────────────────────────────── */
+/* ── connection catalogs ───────────────────────────────── */
 
-/* Connection managers: refId/name → Initial Catalog (database name), used to
-   qualify 2-part OpenRowset names ([dbo].[T] → Catalog.dbo.T). */
-function connectionCatalogs(xml) {
-  const cat = new Map(); // key (refId or object name, lowercased) → catalog
+function catalogFromConnString(cs) {
+  return /Initial Catalog=([^;"']+)/i.exec(xmlDecode(cs))?.[1]?.trim() || '';
+}
+
+/* Project-level .conmgr file → { keys: [guid, name], catalog }. */
+export function parseConmgr(xmlText) {
+  const xml = String(xmlText || '');
+  const guid = guidOf(/DTS:DTSID="([^"]+)"/.exec(xml)?.[1]);
+  const name = /DTS:ObjectName="([^"]+)"/.exec(xml)?.[1] || '';
+  const cs =
+    /DTS:ConnectionString="([^"]*)"/.exec(xml)?.[1] ||
+    /<DTS:Property[^>]*DTS:Name="ConnectionString"[^>]*>([^<]*)</.exec(xml)?.[1] || '';
+  const catalog = catalogFromConnString(cs);
+  if (!catalog) return null;
+  const keys = [guid, name.toLowerCase()].filter(Boolean);
+  return keys.length ? { keys, catalog } : null;
+}
+
+/* In-package connection managers (older/self-contained packages). */
+function packageCatalogs(xml, into) {
   const CM_RE = /<DTS:ConnectionManager\b([\s\S]*?)(?:\/>|<\/DTS:ConnectionManager>)/gi;
   let m;
   while ((m = CM_RE.exec(xml))) {
     const block = m[1];
-    const refId = /DTS:refId="([^"]+)"/.exec(block)?.[1];
-    const name = /DTS:ObjectName="([^"]+)"/.exec(block)?.[1];
     const cs =
       /DTS:ConnectionString="([^"]*)"/.exec(block)?.[1] ||
-      /<DTS:Property[^>]*DTS:Name="ConnectionString"[^>]*>([^<]*)</.exec(block)?.[1] ||
-      '';
-    const catalog = /Initial Catalog=([^;"']+)/i.exec(xmlDecode(cs))?.[1]?.trim();
+      /<DTS:Property[^>]*DTS:Name="ConnectionString"[^>]*>([^<]*)</.exec(block)?.[1] || '';
+    const catalog = catalogFromConnString(cs);
     if (!catalog) continue;
-    if (refId) cat.set(refId.toLowerCase(), catalog);
-    if (name) cat.set(name.toLowerCase(), catalog);
+    [
+      /DTS:refId="([^"]+)"/.exec(block)?.[1]?.toLowerCase(),
+      guidOf(/DTS:DTSID="([^"]+)"/.exec(block)?.[1]),
+      /DTS:ObjectName="([^"]+)"/.exec(block)?.[1]?.toLowerCase(),
+    ].filter(Boolean).forEach((k) => into.set(k, catalog));
   }
-  return cat;
 }
 
-/* Qualify a table with its connection's database when it has no catalog part:
-   dbo.T → Catalog.dbo.T ; T → Catalog..T ; already 3-part → unchanged. */
+const catalogFor = (catalogs, ref) => {
+  if (!ref) return '';
+  const r = String(ref).toLowerCase();
+  return catalogs.get(r) || catalogs.get(guidOf(r)) || '';
+};
+
+/* Qualify a table with its connection's database when it has no catalog:
+   dbo.T → Catalog.dbo.T ; T → Catalog..T ; 3-part / no catalog → as-is. */
 function qualify(table, catalog) {
   if (!table || !catalog) return table;
   const parts = table.split('.');
@@ -91,10 +148,12 @@ function qualify(table, catalog) {
   return `${catalog}..${table}`;
 }
 
-/* One pipeline (data flow): pair its source components with its destination
-   components. A component is a destination when its class says so, or —
-   for GUID class ids (SSIS 2005/2008) — when it has input columns but no
-   data outputs. */
+/* ── .dtsx parsing ─────────────────────────────────────── */
+
+/* One pipeline (data flow): pair its source components with its
+   destination components. Real packages use string class ids
+   (Microsoft.OLEDBSource / Microsoft.OLEDBDestination); for GUID class
+   ids (SSIS 2005/2008) fall back to input/output structure. */
 function pipelineLineage(pipeXml, catalogs) {
   const comps = pipeXml.match(/<component\b[\s\S]*?<\/component>/gi) || [];
   const sources = [];
@@ -102,19 +161,16 @@ function pipelineLineage(pipeXml, catalogs) {
   comps.forEach((c) => {
     const cls = (/componentClassID="([^"]*)"/i.exec(c)?.[1] || '').toLowerCase();
     const props = {};
-    const P_RE = /<property\b[^>]*name="(SqlCommand|OpenRowset|OpenRowsetVariable|TableOrViewName)"[^>]*>([\s\S]*?)<\/property>/gi;
+    const P_RE = /<property\b[^>]*name="(SqlCommand|OpenRowset|TableOrViewName)"[^>]*>([\s\S]*?)<\/property>/gi;
     let pm;
     while ((pm = P_RE.exec(c))) props[pm[1]] = xmlDecode(pm[2]).trim();
-    const connRef = (
+    const connRef =
       /connectionManagerRefId="([^"]+)"/i.exec(c)?.[1] ||
-      /connectionManagerID="([^"]+)"/i.exec(c)?.[1] ||
-      ''
-    ).toLowerCase();
-    const catalog = catalogs.get(connRef);
+      /connectionManagerID="([^"]+)"/i.exec(c)?.[1] || '';
+    const catalog = catalogFor(catalogs, connRef);
 
     const hasInputCols = /<inputColumn\b/i.test(c);
-    const hasOutputCols = /<outputColumn\b/i.test(c) && !/isErrorOut="true"[^>]*>[\s\S]*<outputColumn/i.test(c);
-    const isDest = /destination/.test(cls) || (!/source/.test(cls) && hasInputCols && !hasOutputCols);
+    const isDest = /destination/.test(cls) || (!/source/.test(cls) && hasInputCols);
     const isSource = /source/.test(cls) || (!isDest && !hasInputCols);
 
     const openRowset = props.OpenRowset || props.TableOrViewName || '';
@@ -123,7 +179,7 @@ function pipelineLineage(pipeXml, catalogs) {
       if (t) dests.push(qualify(t, catalog));
     } else if (isSource) {
       if (props.SqlCommand) {
-        tableRefs(props.SqlCommand).forEach((r) => sources.push(qualify(r.table, catalog)));
+        sourceTablesOf(props.SqlCommand).forEach((t) => sources.push(qualify(t, catalog)));
       } else if (openRowset) {
         sources.push(qualify(cleanTableName(openRowset), catalog));
       }
@@ -139,10 +195,12 @@ function pipelineLineage(pipeXml, catalogs) {
     .filter((e) => e.sources.length);
 }
 
-/* Parse one .dtsx file into lineage entries [{ package, target, sources }]. */
-export function parseDtsxLineage(xmlText, fileName = '') {
+/* Parse one .dtsx into lineage entries [{ package, target, sources }].
+   `extraCatalogs` come from project-level .conmgr files. */
+export function parseDtsxLineage(xmlText, fileName = '', extraCatalogs = new Map()) {
   const xml = String(xmlText || '');
-  const catalogs = connectionCatalogs(xml);
+  const catalogs = new Map(extraCatalogs);
+  packageCatalogs(xml, catalogs);
   const entries = [];
 
   // Data-flow pipelines (both DTSX formats wrap them in a <pipeline> element).
@@ -150,7 +208,8 @@ export function parseDtsxLineage(xmlText, fileName = '') {
     pipelineLineage(p, catalogs).forEach((e) => entries.push({ package: fileName, ...e }));
   });
 
-  // Execute SQL Tasks — attribute form and property-element form.
+  // Execute SQL Tasks — attribute form and property-element form. The
+  // package default catalog (most-used connection) qualifies bare names.
   const stmts = [];
   let m;
   const A_RE = /SqlStatementSource="([^"]*)"/gi;
@@ -187,10 +246,16 @@ function dedupeEntries(entries) {
   return [...byTarget.values()];
 }
 
-/* ── lineage store + lookup ────────────────────────────── */
+/* ── lineage store ─────────────────────────────────────── */
 
 export function emptyLineage() {
-  return { entries: [], index: new Map(), packages: new Set() };
+  return {
+    catalogs: new Map(),   // guid / connection name → database
+    packages: [],          // [{ fileName, content, type: 'dtsx' | 'sql' }]
+    entries: [],           // [{ package, target, sources[] }]
+    index: new Map(),      // lookup key → entries[]
+    packageNames: new Set(),
+  };
 }
 
 /* Keys a mart table can be looked up by, most → least specific:
@@ -204,43 +269,87 @@ function keysFor(table) {
   return [...new Set(keys)];
 }
 
-/* Immutable merge — returns a NEW store (safe for React state). */
-export function mergeLineage(store, entries) {
-  const next = {
-    entries: [...(store?.entries || [])],
-    index: new Map(store?.index || []),
-    packages: new Set(store?.packages || []),
-  };
-  (entries || []).forEach((e) => {
-    if (!e?.target || !e.sources?.length) return;
-    next.entries.push(e);
-    if (e.package) next.packages.add(e.package);
-    keysFor(e.target).forEach((k) => {
-      const arr = next.index.get(k) ? [...next.index.get(k)] : [];
-      arr.push(e);
-      next.index.set(k, arr);
+/* Add uploaded lineage files (.conmgr / .dtsx / .sql load scripts) in ANY
+   order. Returns a NEW store (safe for React state): raw package text is
+   retained and all entries re-derived so late-arriving .conmgr catalogs
+   re-qualify earlier packages. */
+export function addLineageFiles(store, files) {
+  const next = emptyLineage();
+  next.catalogs = new Map(store?.catalogs || []);
+  next.packages = [...(store?.packages || [])];
+
+  (files || []).forEach((f) => {
+    if (f.kind === 'conmgr') {
+      const c = parseConmgr(f.content);
+      if (c) c.keys.forEach((k) => next.catalogs.set(k, c.catalog));
+    } else if (f.kind === 'dtsx') {
+      next.packages.push({ fileName: f.fileName, content: f.content, type: 'dtsx' });
+    } else {
+      next.packages.push({ fileName: f.fileName, content: f.content, type: 'sql' });
+    }
+  });
+
+  next.packages.forEach((p) => {
+    const entries = p.type === 'dtsx'
+      ? parseDtsxLineage(p.content, p.fileName, next.catalogs)
+      : parseSqlScriptLineage(p.content, p.fileName);
+    entries.forEach((e) => {
+      if (!e?.target || !e.sources?.length) return;
+      next.entries.push(e);
+      next.packageNames.add(p.fileName);
+      keysFor(e.target).forEach((k) => {
+        const arr = next.index.get(k) || [];
+        arr.push(e);
+        next.index.set(k, arr);
+      });
     });
   });
   return next;
 }
 
-/* mart table → { sources[], packages[] } | null. Tries the most specific
-   key first so Finance_MIS.dbo.D_X beats a bare D_X collision. */
-export function lookupOriginal(store, table) {
-  if (!store?.index?.size || !table) return null;
+/* Entries whose target matches `table` (most-specific key wins). */
+function entriesFor(store, table) {
   for (const k of keysFor(table)) {
     const arr = store.index.get(k);
-    if (arr?.length) {
-      const sources = [];
-      const packages = [];
-      arr.forEach((e) => {
-        e.sources.forEach((s) => {
-          if (!sources.some((x) => normTable(x) === normTable(s))) sources.push(s);
-        });
-        if (e.package && !packages.includes(e.package)) packages.push(e.package);
-      });
-      return { sources, packages };
-    }
+    if (arr?.length) return arr;
   }
   return null;
+}
+
+/* mart table → { sources[], packages[], intermediates[] } | null.
+   Loads are chained (mart ← staging ← core file), so sources that are
+   themselves load targets are resolved TRANSITIVELY down to the ultimate
+   origins; the traversed staging tables are reported as intermediates. */
+export function lookupOriginal(store, table) {
+  if (!store?.index?.size || !table) return null;
+  if (!entriesFor(store, table)) return null;
+
+  const sources = [];
+  const packages = [];
+  const intermediates = [];
+  const seen = new Set([normTable(table)]);
+  const addUnique = (list, v, key = (x) => normTable(x)) => {
+    if (!list.some((x) => key(x) === key(v))) list.push(v);
+  };
+
+  const walk = (t, depth) => {
+    const arr = entriesFor(store, t);
+    if (!arr) { addUnique(sources, t); return; }
+    arr.forEach((e) => {
+      if (e.package) addUnique(packages, e.package, (x) => x);
+      e.sources.forEach((s) => {
+        const k = normTable(s);
+        if (seen.has(k)) return;
+        seen.add(k);
+        if (depth < 10 && entriesFor(store, s)) {
+          addUnique(intermediates, s);
+          walk(s, depth + 1);
+        } else {
+          addUnique(sources, s);
+        }
+      });
+    });
+  };
+  walk(table, 0);
+  return sources.length ? { sources, packages, intermediates } : null;
 }
