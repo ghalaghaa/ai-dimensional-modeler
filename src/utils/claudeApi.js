@@ -669,27 +669,46 @@ function _buildInferredDimDate() {
    A real source table is schema-qualified (contains a dot). Bare
    identifiers are CTE names / derived-table aliases and are skipped. The
    scan covers the WHOLE SQL, including CTE bodies, so a table used only in
-   an anti-join or inside a WITH block is still discovered. Returns an
+   an anti-join or inside a WITH block is still discovered. Identifier parts
+   may be plain, "double-quoted" (Cognos/SQL Server exports), [bracketed],
+   or `backticked` — quotes are stripped from the returned names. Returns an
    array of { table, alias }. */
+const _IDENT = '(?:"[^"]+"|\\[[^\\]]+\\]|`[^`]+`|[A-Za-z_]\\w*)';
+const _TABLE_REF_RE = new RegExp(
+  // The dotted chain allows an EMPTY middle part (Db..Table — T-SQL
+  // default-schema shorthand); the '..' is preserved in the result.
+  '\\b(?:FROM|JOIN)\\s+(' + _IDENT + '(?:\\s*\\.\\s*' + _IDENT + '?)+)' +
+  '(?:[ \\t]+(?:AS\\s+)?(' + _IDENT + '))?', 'gi',
+);
+function _unquoteIdent(s) {
+  return String(s ?? '').replace(/^["`[]/, '').replace(/["`\]]$/, '');
+}
+/* Quote-insensitive key for comparing table names ("A"."b"."C" ≡ a.b.c). */
+function _normTable(t) {
+  return String(t ?? '').replace(/["`[\]]/g, '').replace(/\s+/g, '').toLowerCase();
+}
 function _tableRefs(sql) {
   const refs = [];
-  const re = /\b(?:FROM|JOIN)\s+([A-Za-z_]\w*(?:\.\w+)+)\s*(?:\bAS\b\s+)?([A-Za-z_]\w*)?/gi;
   let m;
-  while ((m = re.exec(String(sql || '')))) {
-    let alias = m[2] || '';
+  _TABLE_REF_RE.lastIndex = 0;
+  while ((m = _TABLE_REF_RE.exec(String(sql || '')))) {
+    // Strip quote characters but keep the dot structure intact.
+    const table = m[1].replace(/["`[\]]/g, '').replace(/\s+/g, '');
+    let alias = m[2] ? _unquoteIdent(m[2]) : '';
     if (/^(on|inner|left|right|full|cross|join|where|group|order|union|having|limit|using|as)$/i.test(alias)) alias = '';
-    refs.push({ table: m[1], alias });
+    refs.push({ table, alias });
   }
   return refs;
 }
 
-/* Case-insensitive union that preserves the existing list and first-seen
-   casing — used to merge discovered base tables into source_tables. */
+/* Case- and quote-insensitive union that preserves the existing list and
+   first-seen casing — used to merge discovered base tables into
+   source_tables. */
 function _mergeTables(existing, incoming) {
   const out = Array.isArray(existing) ? existing.filter(Boolean).slice() : [];
-  const seen = new Set(out.map((t) => String(t).toLowerCase()));
+  const seen = new Set(out.map(_normTable));
   (incoming || []).forEach((t) => {
-    const k = String(t).toLowerCase();
+    const k = _normTable(t);
     if (t && !seen.has(k)) { seen.add(k); out.push(t); }
   });
   return out;
@@ -777,14 +796,15 @@ function _applyReportFilters(model, sql) {
   const preds = _reportFilters(sql);
   if (!preds.length) return 0;
 
-  const tableAlias = new Map();   // lower(full table) → alias
+  const tableAlias = new Map();   // normalised full table → alias
   _tableRefs(sql).forEach((r) => {
-    const k = r.table.toLowerCase();
+    const k = _normTable(r.table);
     if (r.alias && !tableAlias.has(k)) tableAlias.set(k, r.alias.toLowerCase());
   });
   const aliasesIn = (p) => {
-    const set = new Set(); const re = /\b([A-Za-z_]\w*)\s*\./g; let m;
-    while ((m = re.exec(p))) set.add(m[1].toLowerCase());
+    // "Alias"."col" (quoted) and Alias.col (bare) qualifiers both count.
+    const set = new Set(); const re = /(?:\b([A-Za-z_]\w*)|"([^"]+)"|\[([^\]]+)\])\s*\./g; let m;
+    while ((m = re.exec(p))) set.add((m[1] || m[2] || m[3]).toLowerCase());
     return set;
   };
 
@@ -800,8 +820,8 @@ function _applyReportFilters(model, sql) {
     preds.forEach((p) => {
       if (already.includes(norm(p))) return;
       const al = aliasesIn(p);
-      const bySec = jrs.find((jr) => { const a = tableAlias.get(String(jr.secondary_source_table).toLowerCase()); return a && al.has(a); });
-      const byPri = jrs.find((jr) => { const a = tableAlias.get(String(jr.primary_source_table).toLowerCase()); return a && al.has(a); });
+      const bySec = jrs.find((jr) => { const a = tableAlias.get(_normTable(jr.secondary_source_table)); return a && al.has(a); });
+      const byPri = jrs.find((jr) => { const a = tableAlias.get(_normTable(jr.primary_source_table)); return a && al.has(a); });
       bucket.get(bySec || byPri || jrs[0]).push(p);
     });
     jrs.forEach((jr) => {
@@ -1008,22 +1028,63 @@ export function reconcileCaseAnalysis(model, sqlContent = '') {
   // tables — must be listed. The model sometimes drops a table it only sees
   // through a CTE alias (e.g. udm_service.pbg_customer behind a WITH … PBG).
   let addedTables = [];
+  let removedTables = [];
   if (sqlContent) {
     const sqlTables = _tableRefs(sqlContent).map((r) => r.table);
-    const before = new Set((model.source_tables || []).map((t) => String(t).toLowerCase()));
+    const before = new Set((model.source_tables || []).map(_normTable));
     model.source_tables = _mergeTables(model.source_tables, sqlTables);
-    addedTables = model.source_tables.filter((t) => !before.has(String(t).toLowerCase()));
+    addedTables = model.source_tables.filter((t) => !before.has(_normTable(t)));
     if (addedTables.length && model.facts.length) {
       // Anti-join / filter-only tables belong to the fact they restrict.
       const onTarget = new Set();
       [...model.facts, ...model.dimensions].forEach((t) =>
-        (t.source_tables || []).forEach((s) => onTarget.add(String(s).toLowerCase())));
+        (t.source_tables || []).forEach((s) => onTarget.add(_normTable(s))));
       const f0 = model.facts[0];
       f0.source_tables = Array.isArray(f0.source_tables) ? f0.source_tables : [];
       addedTables.forEach((t) => {
-        if (!onTarget.has(String(t).toLowerCase())) f0.source_tables = _mergeTables(f0.source_tables, [t]);
+        if (!onTarget.has(_normTable(t))) f0.source_tables = _mergeTables(f0.source_tables, [t]);
       });
     }
+
+    // SOURCE-TABLE VERACITY (STEP 7 enforcement): a schema-qualified source
+    // table that never appears in the SQL FROM/JOIN is a hallucination (e.g.
+    // an invented Finance_MIS.dbo.D_Date backing an inferred DIM_Date).
+    // Strip it everywhere and fall back to the explicit sentinels so the ETL
+    // team is never pointed at a table that does not exist in the report.
+    const realTables = new Set(sqlTables.map(_normTable));
+    const isSentinel = (t) =>
+      !t || /etl generated|recommended|needs confirmation|not in sql|^n\/?a$/i.test(String(t).trim());
+    const isReal = (t) =>
+      isSentinel(t) || !String(t).includes('.') || realTables.has(_normTable(t));
+    const dropList = (list) => (list || []).filter((t) => {
+      if (isReal(t)) return true;
+      removedTables.push(String(t));
+      return false;
+    });
+    model.source_tables = dropList(model.source_tables);
+    [...model.facts, ...model.dimensions].forEach((x) => {
+      if (Array.isArray(x.source_tables)) x.source_tables = dropList(x.source_tables);
+      if (x.source_table && !isReal(x.source_table)) {
+        removedTables.push(String(x.source_table));
+        x.source_table = '⚠ Recommended – no source table in SQL';
+        x.inferred = true;
+      }
+      if (Array.isArray(x.join_rules)) {
+        x.join_rules = x.join_rules.filter((jr) => {
+          const bad = [jr.primary_source_table, jr.secondary_source_table]
+            .filter((t) => !isReal(t));
+          bad.forEach((t) => removedTables.push(String(t)));
+          return !bad.length;
+        });
+      }
+      [...(x.column_mappings || []), ...(x.measures || [])].forEach((cm) => {
+        if (cm.source_table && !isReal(cm.source_table)) {
+          removedTables.push(String(cm.source_table));
+          cm.source_table = '⚠ Not in SQL – needs confirmation';
+        }
+      });
+    });
+    removedTables = [...new Set(removedTables)];
   }
 
   // FILTER CAPTURE (STEP 8C): surface the report's WHERE conditions into the
@@ -1049,6 +1110,9 @@ export function reconcileCaseAnalysis(model, sqlContent = '') {
   }
   if (addedTables.length) {
     notes.push(`Added ${addedTables.length} source table(s) present in the SQL FROM/JOIN but missing from the model (incl. CTE/anti-join tables): ${addedTables.join(', ')}.`);
+  }
+  if (removedTables.length) {
+    notes.push(`Removed ${removedTables.length} hallucinated source table(s) that do NOT appear in the SQL FROM/JOIN: ${removedTables.join(', ')}.`);
   }
   if (filledFilters) {
     notes.push(`Captured ${filledFilters} WHERE/HAVING filter condition(s) from the SQL into join rules that were left as N/A.`);
