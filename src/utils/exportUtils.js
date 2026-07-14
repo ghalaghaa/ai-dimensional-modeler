@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { lookupOriginal } from './ssisLineage';
 
 /* ─────────────────────────────────────────────────────────
    Source-to-Target mapping workbook (Kimball star schema).
@@ -131,6 +132,13 @@ function readmeRows(results) {
   return rows;
 }
 
+function readmeLineageRow(lineage) {
+  return [
+    'SSIS Lineage',
+    `Original source-system tables resolved from ${lineage.packages.size} SSIS package(s) / load script(s) — see the Source_Lineage sheet and the "Original Source Table (RAW)" columns.`,
+  ];
+}
+
 /* ── ETL_Rules (sheet 6) — generic + load guidance ─────── */
 function etlRows() {
   const H = ['Rule ID', 'Area', 'Rule Description', 'Applies To', 'Action'];
@@ -147,11 +155,41 @@ function etlRows() {
   return [H, ...r.map((row, i) => [`ETL_${String(i + 1).padStart(3, '0')}`, ...row])];
 }
 
+/* Values in a Source Table cell that are placeholders, not real tables. */
+const NOT_A_TABLE = /^$|^n\/?a$|etl generated|etl system|needs confirmation|recommended|⚠/i;
+
 /* ─────────────────────────────────────────────────────────
    PURE: build the workbook from analysis results.
+   `lineage` (optional) is the SSIS lineage store from ssisLineage.js —
+   when present, mart-layer (Cognos) source tables are resolved to the
+   ORIGINAL source-system tables and shown alongside them.
 ───────────────────────────────────────────────────────── */
-export function buildWorkbook(results) {
+export function buildWorkbook(results, lineage) {
   const list = Array.isArray(results) ? results.filter((r) => r?.result) : [];
+  const hasLineage = (lineage?.entries?.length ?? 0) > 0;
+
+  /* mart table → original source tables (or a warning when unmapped) */
+  const origOf = (table) => {
+    const t = String(table ?? '').trim();
+    if (!hasLineage || NOT_A_TABLE.test(t)) return '';
+    const hit = lookupOriginal(lineage, t);
+    return hit ? hit.sources.join(', ') : '⚠ No SSIS lineage found';
+  };
+  /* multi-table cell ("A, B") → union of original sources */
+  const origOfList = (cell) => {
+    const tables = String(cell ?? '').split(',').map((s) => s.trim()).filter((s) => s && !NOT_A_TABLE.test(s));
+    if (!hasLineage || !tables.length) return '';
+    const out = [];
+    let unmapped = 0;
+    tables.forEach((t) => {
+      const hit = lookupOriginal(lineage, t);
+      if (!hit) { unmapped++; return; }
+      hit.sources.forEach((s) => { if (!out.includes(s)) out.push(s); });
+    });
+    let txt = out.join(', ');
+    if (unmapped) txt += `${txt ? ' ' : ''}(⚠ ${unmapped} table(s) without SSIS lineage)`;
+    return txt;
+  };
 
   const mapHeader = ['Mapping ID', 'Target Type', 'Target Table', 'Source Tables', 'Join Logic', 'Load Dependency', 'Mapping Summary'];
   const joinHeader = ['Mapping ID', 'Target Table', 'Primary Source Table', 'Secondary Source Table', 'Join Type', 'Join Condition', 'Filter Condition', 'Purpose'];
@@ -322,6 +360,36 @@ export function buildWorkbook(results) {
   if (joinRows.length === 1) joinRows.push([NA, NA, NA, NA, NA, 'No multi-table joins detected', NA, NA]);
   if (lookupRows.length === 1) lookupRows.push([NA, NA, NA, NA, NA, NA, UNKNOWN_KEY, 'No fact foreign keys detected']);
 
+  /* ── SSIS lineage enrichment ──
+     Insert "Original Source Table(s) (RAW)" next to every mart-layer source
+     column, and add a Source_Lineage sheet documenting mart → original. */
+  const lineageRows = [['Cognos/Mart Table', 'Original Source Table(s)', 'SSIS Package(s)', 'Status']];
+  if (hasLineage) {
+    // Source_To_Target_Map: after 'Source Tables' (index 3)
+    mapRows.forEach((row, i) =>
+      row.splice(4, 0, i === 0 ? 'Original Source Tables (RAW)' : origOfList(row[3])));
+    // Column_Mapping: after 'Source Table' (index 4)
+    colRows.forEach((row, i) =>
+      row.splice(5, 0, i === 0 ? 'Original Source Table (RAW)' : origOf(row[4])));
+
+    // Source_Lineage sheet — one row per mart table used by the reports.
+    const seen = new Set();
+    list.forEach((r) => {
+      (r.result?.source_tables ?? []).forEach((t) => {
+        const k = String(t).toLowerCase();
+        if (!t || NOT_A_TABLE.test(String(t)) || seen.has(k)) return;
+        seen.add(k);
+        const hit = lookupOriginal(lineage, t);
+        lineageRows.push([
+          t,
+          hit ? hit.sources.join(', ') : '',
+          hit ? hit.packages.join(', ') : '',
+          hit ? 'Mapped from SSIS' : '⚠ No SSIS package uploaded for this table',
+        ]);
+      });
+    });
+  }
+
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: false }] };
 
@@ -331,10 +399,15 @@ export function buildWorkbook(results) {
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   };
 
-  add(readmeRows(list), 'README', [26, 92]);
-  add(mapRows, 'Source_To_Target_Map', [12, 12, 26, 40, 40, 24, 60]);
+  const readme = readmeRows(list);
+  if (hasLineage) readme.splice(2, 0, readmeLineageRow(lineage));
+  add(readme, 'README', [26, 92]);
+  add(mapRows, 'Source_To_Target_Map',
+    hasLineage ? [12, 12, 26, 40, 44, 40, 24, 60] : [12, 12, 26, 40, 40, 24, 60]);
+  if (hasLineage) add(lineageRows, 'Source_Lineage', [36, 60, 36, 34]);
   add(joinRows, 'Source_Join_Rules', [12, 24, 26, 26, 12, 48, 32, 40]);
-  add(colRows, 'Column_Mapping', [12, 24, 26, 16, 26, 26, 46, 22, 10, 14, 20, 16]);
+  add(colRows, 'Column_Mapping',
+    hasLineage ? [12, 24, 26, 16, 26, 34, 26, 46, 22, 10, 14, 20, 16] : [12, 24, 26, 16, 26, 26, 46, 22, 10, 14, 20, 16]);
   add(lookupRows, 'Fact_Dim_Lookups', [28, 30, 24, 24, 24, 48, 16, 32]);
   add(etlRows(), 'ETL_Rules', [10, 18, 60, 22, 22]);
   add(dqRows, 'DQ_Rules', [12, 24, 24, 44, 10, 28]);
@@ -344,9 +417,9 @@ export function buildWorkbook(results) {
 }
 
 /* ── browser downloads ─────────────────────────────────── */
-export async function exportExcel(results) {
+export async function exportExcel(results, lineage) {
   const { saveAs } = await import('file-saver');
-  const wb = buildWorkbook(results);
+  const wb = buildWorkbook(results, lineage);
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), 'dimensional_model.xlsx');
 }

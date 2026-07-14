@@ -7,12 +7,14 @@ import ModelResult from './components/ModelResult';
 import { analyzeQuery } from './utils/claudeApi';
 import { exportExcel } from './utils/exportUtils';
 import { ACCEPT, readUploadedFiles } from './utils/fileIntake';
+import { emptyLineage, mergeLineage, parseDtsxLineage, parseSqlScriptLineage } from './utils/ssisLineage';
 import styles from './App.module.css';
 
 export default function App() {
   const [files, setFiles] = useState([]);         // [{fileName, content}]
   const [statuses, setStatuses] = useState([]);   // 'idle' | 'loading' | 'done' | 'error'
   const [results, setResults] = useState([]);     // [{fileName, result, error}]
+  const [lineage, setLineage] = useState(emptyLineage()); // SSIS mart → source-table lineage
   const [activeIdx, setActiveIdx] = useState(0);
   const [tab, setTab] = useState('preview');      // 'preview' | 'model'
 
@@ -29,8 +31,28 @@ export default function App() {
     }
   };
 
-  // عند إفلات الملف: يبدأ التحليل تلقائياً مباشرة
-  const handleFilesLoaded = (newFiles) => {
+  // عند إفلات الملف: يبدأ التحليل تلقائياً مباشرة.
+  // .dtsx (وكذلك SQL load scripts التي تحتوي INSERT INTO) تُوجَّه إلى
+  // خريطة الـ lineage بدلاً من التحليل — هي مصدر "الجداول الأصلية".
+  const handleFilesLoaded = (incoming) => {
+    const newFiles = [];
+    incoming.forEach((f) => {
+      if (f.kind === 'dtsx') {
+        const entries = parseDtsxLineage(f.content, f.fileName);
+        if (entries.length) setLineage((prev) => mergeLineage(prev, entries));
+        else alert(`No source→target mappings found in ${f.fileName}`);
+        return;
+      }
+      if (f.kind === 'sql' && /\b(insert\s+into|merge\s+into|merge)\b/i.test(f.content)) {
+        const entries = parseSqlScriptLineage(f.content, f.fileName);
+        if (entries.length) {
+          setLineage((prev) => mergeLineage(prev, entries));
+          return; // load script, not a report query — don't analyze it
+        }
+      }
+      newFiles.push(f);
+    });
+    if (!newFiles.length) return;
     const base = files.length;
     setFiles((prev) => [...prev, ...newFiles]);
     setStatuses((prev) => [...prev, ...Array(newFiles.length).fill('idle')]);
@@ -74,6 +96,12 @@ export default function App() {
           <div className={styles.uploadZone}>
             <div className="card" style={{ maxWidth: 680, width: '100%' }}>
               <FileUploader onFilesLoaded={handleFilesLoaded} />
+              {lineage.entries.length > 0 && (
+                <p style={{ marginTop: 12, textAlign: 'center' }}>
+                  🔗 SSIS Lineage loaded: {lineage.entries.length} table mapping(s) from {lineage.packages.size} package(s)
+                  — now upload the report SQL files
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -117,12 +145,21 @@ export default function App() {
                 </button>
               </div>
 
+              {/* SSIS lineage */}
+              {lineage.entries.length > 0 && (
+                <div className={styles.exportBox}>
+                  <p className={styles.exportLabel}>
+                    🔗 SSIS Lineage: {lineage.entries.length} table mapping(s) from {lineage.packages.size} package(s)
+                  </p>
+                </div>
+              )}
+
               {/* Export */}
               {doneResults.length > 0 && (
                 <div className={styles.exportBox}>
                   <p className={styles.exportLabel}>Export Results ({doneResults.length})</p>
                   <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => exportExcel(doneResults)}>⬇ Export Excel</button>
+                    onClick={() => exportExcel(doneResults, lineage)}>⬇ Export Excel</button>
                 </div>
               )}
             </aside>

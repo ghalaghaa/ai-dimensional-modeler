@@ -8,7 +8,7 @@ export default function FileUploader({ onFilesLoaded }) {
 
   const readFiles = (fileList) => {
     const supported = Array.from(fileList).filter((f) => isSupported(f.name));
-    if (!supported.length) return alert('Please upload .sql or .xlsx report files');
+    if (!supported.length) return alert('Please upload .sql / .xlsx report files or .dtsx SSIS packages');
 
     readUploadedFiles(fileList).then((items) => {
       const usable = items.filter((it) => it.content);
